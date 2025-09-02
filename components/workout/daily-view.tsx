@@ -10,6 +10,7 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { CheckCircle2, ChevronLeft, ChevronRight, Circle, ImageIcon, PlayCircle, Timer, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
+import { useEffectOnce } from "react-use";
 
 type Props = {
   days: WorkoutDay[];
@@ -27,6 +28,7 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
   // Local editable reps/weight per set (not persisted yet)
   type SetKey = { reps: number; weightKg: number };
   const [setValues, setSetValues] = useState<Record<string, Record<number, SetKey>>>({});
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Initialize editable values when day changes
   useEffect(() => {
@@ -41,6 +43,32 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
     setCompletedSets({});
     setCollapsedExercises({});
   }, [day]);
+
+  // Hydrate performance for today
+  useEffectOnce(() => {
+    fetch("/app/api/session/today", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.sessionId) setSessionId(data.sessionId as string);
+        if (data?.perfs) {
+          const perfs = data.perfs as Record<string, Record<number, { completed: boolean; reps: number; weightKg: number }>>;
+          const nextCompleted: Record<string, Set<number>> = {};
+          const nextValues: Record<string, Record<number, SetKey>> = {};
+          for (const [exerciseId, bySet] of Object.entries(perfs)) {
+            nextCompleted[exerciseId] = new Set<number>();
+            nextValues[exerciseId] = {};
+            for (const [setNumberStr, v] of Object.entries(bySet)) {
+              const setNumber = Number(setNumberStr);
+              if (v.completed) nextCompleted[exerciseId].add(setNumber);
+              nextValues[exerciseId][setNumber] = { reps: v.reps, weightKg: v.weightKg };
+            }
+          }
+          setCompletedSets(nextCompleted);
+          setSetValues((prev) => ({ ...prev, ...nextValues }));
+        }
+      })
+      .catch(() => {});
+  });
 
   function toggleSetCompleted(exerciseId: string, setNumber: number) {
     setCompletedSets((prev) => {
@@ -62,6 +90,15 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
           }
         }
       } catch {}
+
+      // Persist optimistically
+      const date = day.date;
+      const nextCompleted = current.has(setNumber);
+      fetch("/app/api/session/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, exerciseSlug: exerciseId, setNumber, completed: nextCompleted }),
+      }).catch(() => {});
       return next;
     });
   }
@@ -315,13 +352,21 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
                             variant="ghost"
                             className="h-8 w-8"
                             aria-label="Aumentar repeticiones"
-                            onClick={() => setSetValues((prev) => ({
-                              ...prev,
-                              [ex.id]: {
-                                ...(prev[ex.id] ?? {}),
-                                [s.setNumber]: { reps: (current.reps ?? 0) + 1, weightKg: current.weightKg },
-                              },
-                            }))}
+                            onClick={() => {
+                              const next = (current.reps ?? 0) + 1;
+                              setSetValues((prev) => ({
+                                ...prev,
+                                [ex.id]: {
+                                  ...(prev[ex.id] ?? {}),
+                                  [s.setNumber]: { reps: next, weightKg: current.weightKg },
+                                },
+                              }));
+                              fetch("/app/api/session/update", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ date: day.date, exerciseSlug: ex.id, setNumber: s.setNumber, reps: next, weightKg: current.weightKg }),
+                              }).catch(() => {});
+                            }}
                           >
                             +
                           </Button>
@@ -352,13 +397,21 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
                             variant="ghost"
                             className="h-8 w-8"
                             aria-label="Aumentar peso"
-                            onClick={() => setSetValues((prev) => ({
-                              ...prev,
-                              [ex.id]: {
-                                ...(prev[ex.id] ?? {}),
-                                [s.setNumber]: { reps: current.reps, weightKg: Number((current.weightKg ?? 0) + 2.5) },
-                              },
-                            }))}
+                            onClick={() => {
+                              const next = Number((current.weightKg ?? 0) + 2.5);
+                              setSetValues((prev) => ({
+                                ...prev,
+                                [ex.id]: {
+                                  ...(prev[ex.id] ?? {}),
+                                  [s.setNumber]: { reps: current.reps, weightKg: next },
+                                },
+                              }));
+                              fetch("/app/api/session/update", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ date: day.date, exerciseSlug: ex.id, setNumber: s.setNumber, reps: current.reps, weightKg: next }),
+                              }).catch(() => {});
+                            }}
                           >
                             +
                           </Button>

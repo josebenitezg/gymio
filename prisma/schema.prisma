@@ -35,6 +35,7 @@ model Day {
   weekId String
 
   exercises Exercise[]
+  sessions  WorkoutSession[]
 
   @@unique([weekId, date])
 }
@@ -53,6 +54,7 @@ model Exercise {
   dayId String
 
   sets  Set[]
+  performances SetPerformance[]
 
   @@unique([dayId, slug])
 }
@@ -78,6 +80,45 @@ model User {
   updatedAt    DateTime @updatedAt
 
   weeks Week[]
+
+  sessions WorkoutSession[]
 }
 
+
+
+model WorkoutSession {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  day   Day?  @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  dayId String?
+
+  performances SetPerformance[]
+
+  @@unique([userId, date])
+}
+
+model SetPerformance {
+  id         String   @id @default(uuid())
+  setNumber  Int
+  reps       Int      @default(0)
+  weightKg   Float    @default(0)
+  completed  Boolean  @default(false)
+  rpe        Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session   WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  exerciseId String
+
+  @@unique([sessionId, exerciseId, setNumber])
+}
 

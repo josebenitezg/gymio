@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Activity, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function Tabbar() {
+export function Tabbar({ hasToday }: { hasToday?: boolean }) {
   const pathname = usePathname();
   const items = [
     { href: "/app/progress", label: "Progreso", icon: Activity },
@@ -28,7 +28,12 @@ export function Tabbar() {
                 active ? "text-foreground" : "text-foreground/70 hover:text-foreground"
               )}
             >
-              <Icon className="h-5 w-5" />
+              <div className="relative">
+                <Icon className="h-5 w-5" />
+                {it.href === "/app/week" && hasToday ? (
+                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-emerald-400 ring-2 ring-black/60" aria-hidden />
+                ) : null}
+              </div>
               <span className="text-[11px]">{it.label}</span>
             </Link>
           );

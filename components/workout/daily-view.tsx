@@ -352,7 +352,7 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
       ))}
 
       {/* Floating rest timer button */}
-      <div className="fixed bottom-4 right-4 z-50">
+      <div className="fixed bottom-20 right-4 z-50 sm:bottom-4">
         <Button
           type="button"
           size="icon"

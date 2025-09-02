@@ -27,7 +27,7 @@ export default function Home() {
         <SignedIn>
           <div className="mt-6 flex justify-center">
             <Button asChild size="lg">
-              <Link href="/profile">Ir a tu perfil</Link>
+              <Link href="/app/progress">Ir a tu estado</Link>
             </Button>
           </div>
         </SignedIn>

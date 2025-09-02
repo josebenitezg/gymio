@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { assertWorkoutWeek } from "@/lib/models/workout";
-import { getCurrentWeekFromDb } from "@/lib/workouts";
+import { getCurrentWeekFromDb, seedCurrentWeekForUserFromCsv } from "@/lib/workouts";
 import { DailyView } from "@/components/workout/daily-view";
 
 export const metadata: Metadata = {
@@ -20,7 +20,11 @@ export default async function ProfilePage() {
   }
 
   // TODO: In the future, scope by userId.
-  const fromDb = await getCurrentWeekFromDb();
+  let fromDb = await getCurrentWeekFromDb(userId);
+  if (!fromDb) {
+    await seedCurrentWeekForUserFromCsv(userId);
+    fromDb = await getCurrentWeekFromDb(userId);
+  }
   if (!fromDb) {
     return (
       <main className="mx-auto w-full max-w-5xl px-4 py-6">

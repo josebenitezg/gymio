@@ -4,10 +4,12 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { type WorkoutDay } from "@/lib/models/workout";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { CheckCircle2, ChevronLeft, ChevronRight, Circle, ImageIcon, PlayCircle, Timer } from "lucide-react";
 import { format } from "date-fns";
+import Link from "next/link";
 
 type Props = {
   days: WorkoutDay[];
@@ -21,6 +23,23 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
   // Track completed sets per exercise id
   const [completedSets, setCompletedSets] = useState<Record<string, Set<number>>>({});
 
+  // Local editable reps/weight per set (not persisted yet)
+  type SetKey = { reps: number; weightKg: number };
+  const [setValues, setSetValues] = useState<Record<string, Record<number, SetKey>>>({});
+
+  // Initialize editable values when day changes
+  useEffect(() => {
+    const initial: Record<string, Record<number, SetKey>> = {};
+    for (const ex of day.exercises) {
+      initial[ex.id] = {};
+      for (const s of ex.sets) {
+        initial[ex.id][s.setNumber] = { reps: s.reps, weightKg: s.weightKg };
+      }
+    }
+    setSetValues(initial);
+    setCompletedSets({});
+  }, [day]);
+
   function toggleSetCompleted(exerciseId: string, setNumber: number) {
     setCompletedSets((prev) => {
       const next: Record<string, Set<number>> = { ...prev };
@@ -31,6 +50,16 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
         current.add(setNumber);
       }
       next[exerciseId] = current;
+
+      // Haptics
+      try {
+        const navAny = (typeof navigator !== "undefined" ? (navigator as unknown as { vibrate?: (p: number | number[]) => boolean }) : undefined);
+        if (navAny?.vibrate) {
+          if (current.has(setNumber)) {
+            navAny.vibrate([10]);
+          }
+        }
+      } catch {}
       return next;
     });
   }
@@ -113,7 +142,29 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
 
   return (
     <div className="w-full mx-auto max-w-5xl space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Day chips */}
+      <div className="-mx-4 overflow-x-auto px-4">
+        <div className="mb-1 flex gap-2">
+          {days.map((d, i) => {
+            const active = i === index;
+            return (
+              <button
+                key={d.date}
+                onClick={() => setIndex(i)}
+                className={
+                  active
+                    ? "inline-flex min-w-14 items-center justify-center rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
+                    : "inline-flex min-w-14 items-center justify-center rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-foreground/80"
+                }
+                aria-pressed={active}
+              >
+                {format(new Date(d.date + "T00:00:00"), "EE").toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="sticky top-2 z-10 mb-2 flex items-center justify-between rounded-lg bg-black/40 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-black/30">
         <Button
           variant="ghost"
           size="icon"
@@ -121,9 +172,9 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
           disabled={!canPrev}
           aria-label="Día anterior"
         >
-          <ChevronLeft className="size-5" />
+          <ChevronLeft className="size-6" />
         </Button>
-        <h2 className="text-lg font-semibold text-center flex-1">
+        <h2 className="flex-1 text-center text-base font-semibold sm:text-lg">
           {title}
         </h2>
         <Button
@@ -133,7 +184,7 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
           disabled={!canNext}
           aria-label="Día siguiente"
         >
-          <ChevronRight className="size-5" />
+          <ChevronRight className="size-6" />
         </Button>
       </div>
 
@@ -164,17 +215,23 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
                   </span>
                 )}
                 {ex.media.videoUrl && (
-                  <a
-                    href={ex.media.videoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-normal text-foreground/70 hover:underline"
-                  >
+                  <Link href={ex.media.videoUrl} target="_blank" className="inline-flex items-center gap-1 text-xs font-normal text-foreground/70 hover:underline">
                     <PlayCircle className="size-4" /> Video
-                  </a>
+                  </Link>
                 )}
               </CardTitle>
               <p className="text-xs text-foreground/60">Descanso: {Math.round(ex.breakSeconds / 60)} min</p>
+
+              {/* Exercise progress bar */}
+              <div className="mt-2 h-1.5 w-full rounded-full bg-white/10">
+                {(() => {
+                  const done = completedSets[ex.id]?.size ?? 0;
+                  const ratio = Math.max(0, Math.min(1, done / ex.sets.length));
+                  return (
+                    <div className="h-1.5 rounded-full bg-emerald-500 transition-[width]" style={{ width: `${Math.round(ratio * 100)}%` }} aria-hidden />
+                  );
+                })()}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -190,24 +247,98 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
               <TBody>
                 {ex.sets.map((s) => {
                   const done = completedSets[ex.id]?.has(s.setNumber) ?? false;
+                  const current = setValues[ex.id]?.[s.setNumber] ?? { reps: s.reps, weightKg: s.weightKg };
                   return (
                     <TR key={s.setNumber} className={done ? "text-foreground/40" : undefined}>
                       <TD>{s.setNumber}</TD>
-                      <TD className={done ? "line-through" : undefined}>{s.reps}</TD>
-                      <TD className={done ? "line-through" : undefined}>{s.weightKg}</TD>
+                      <TD className={done ? "line-through" : undefined}>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label="Reducir repeticiones"
+                            onClick={() => setSetValues((prev) => ({
+                              ...prev,
+                              [ex.id]: {
+                                ...(prev[ex.id] ?? {}),
+                                [s.setNumber]: { reps: Math.max(0, (current.reps ?? 0) - 1), weightKg: current.weightKg },
+                              },
+                            }))}
+                          >
+                            -
+                          </Button>
+                          <span className="w-8 text-center tabular-nums">{current.reps}</span>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label="Aumentar repeticiones"
+                            onClick={() => setSetValues((prev) => ({
+                              ...prev,
+                              [ex.id]: {
+                                ...(prev[ex.id] ?? {}),
+                                [s.setNumber]: { reps: (current.reps ?? 0) + 1, weightKg: current.weightKg },
+                              },
+                            }))}
+                          >
+                            +
+                          </Button>
+                        </div>
+                      </TD>
+                      <TD className={done ? "line-through" : undefined}>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label="Reducir peso"
+                            onClick={() => setSetValues((prev) => ({
+                              ...prev,
+                              [ex.id]: {
+                                ...(prev[ex.id] ?? {}),
+                                [s.setNumber]: { reps: current.reps, weightKg: Math.max(0, Number((current.weightKg ?? 0) - 2.5)) },
+                              },
+                            }))}
+                          >
+                            -
+                          </Button>
+                          <span className="w-10 text-center tabular-nums">{current.weightKg}</span>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label="Aumentar peso"
+                            onClick={() => setSetValues((prev) => ({
+                              ...prev,
+                              [ex.id]: {
+                                ...(prev[ex.id] ?? {}),
+                                [s.setNumber]: { reps: current.reps, weightKg: Number((current.weightKg ?? 0) + 2.5) },
+                              },
+                            }))}
+                          >
+                            +
+                          </Button>
+                        </div>
+                      </TD>
                       <TD className="text-center">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
+                          className="h-10 w-10"
                           aria-pressed={done}
                           aria-label={done ? "Desmarcar serie" : "Marcar serie como hecha"}
                           onClick={() => toggleSetCompleted(ex.id, s.setNumber)}
                         >
                           {done ? (
-                            <CheckCircle2 className="size-5 text-emerald-400" />
+                            <CheckCircle2 className="size-6 text-emerald-400" />
                           ) : (
-                            <Circle className="size-5 text-foreground/40" />
+                            <Circle className="size-6 text-foreground/40" />
                           )}
                         </Button>
                       </TD>
@@ -225,56 +356,70 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
         <Button
           type="button"
           size="icon"
-          className="rounded-full shadow-lg"
+          className="h-12 w-12 rounded-full shadow-lg"
           onClick={() => setTimerOpen(true)}
           aria-label="Abrir temporizador de descanso"
         >
-          <Timer className="size-5" />
+          <Timer className="size-6" />
         </Button>
       </div>
 
-      {/* Modal overlay for rest timer */}
-      {timerOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
-          aria-modal="true"
-          role="dialog"
-          aria-label="Temporizador de descanso"
-        >
-          <div className="absolute inset-0 bg-black/60" onClick={() => setTimerOpen(false)} />
-          <div className="relative z-10 w-[92vw] max-w-sm rounded-xl border border-white/10 bg-zinc-900 p-4 text-foreground shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-medium">Temporizador de descanso</h3>
-              <Button variant="ghost" size="sm" onClick={() => setTimerOpen(false)} aria-label="Cerrar">
-                Cerrar
-              </Button>
+      <Dialog open={timerOpen} onOpenChange={setTimerOpen}>
+        <DialogContent aria-label="Temporizador de descanso">
+          <DialogHeader>
+            <DialogTitle>Temporizador de descanso</DialogTitle>
+            <DialogClose asChild>
+              <Button variant="ghost" size="sm" aria-label="Cerrar">Cerrar</Button>
+            </DialogClose>
+          </DialogHeader>
+          <div className="mb-4 flex flex-col items-center justify-center gap-2">
+            <div className="relative h-24 w-24">
+              {(() => {
+                const radius = 44;
+                const circumference = 2 * Math.PI * radius;
+                const ratio = timerDuration > 0 ? remaining / timerDuration : 0;
+                const offset = circumference * (1 - Math.max(0, Math.min(1, ratio)));
+                return (
+                  <svg viewBox="0 0 100 100" className="h-24 w-24">
+                    <circle cx="50" cy="50" r="44" stroke="rgba(255,255,255,0.12)" strokeWidth="8" fill="none" />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="44"
+                      stroke="currentColor"
+                      strokeWidth="8"
+                      fill="none"
+                      className="text-primary transition-[stroke-dashoffset]"
+                      strokeDasharray={`${circumference} ${circumference}`}
+                      strokeDashoffset={offset}
+                      strokeLinecap="round"
+                    />
+                    <text x="50" y="54" textAnchor="middle" className="fill-current text-xl font-semibold">
+                      {formatSeconds(remaining)}
+                    </text>
+                  </svg>
+                );
+              })()}
             </div>
-            <div className="mb-4 text-center">
-              <div className="text-4xl font-semibold tabular-nums tracking-widest">
-                {formatSeconds(remaining)}
-              </div>
-              <p className="mt-1 text-xs text-foreground/60">
-                Duración: {Math.round(timerDuration / 60)} min
-              </p>
-            </div>
-            <div className="mb-4 grid grid-cols-4 gap-2">
-              {[30, 60, 90, 120].map((sec) => (
-                <Button key={sec} variant={timerDuration === sec ? "default" : "outline"} onClick={() => { setTimerDuration(sec); setRemaining(sec); }}>
-                  {sec}s
-                </Button>
-              ))}
-            </div>
-            <div className="flex items-center justify-center gap-2">
-              {running ? (
-                <Button onClick={pauseTimer} variant="outline">Pausar</Button>
-              ) : (
-                <Button onClick={() => startTimer()} disabled={remaining === 0}>Iniciar</Button>
-              )}
-              <Button onClick={resetTimer} variant="ghost">Reiniciar</Button>
-            </div>
+            <p className="text-xs text-foreground/60">Duración: {Math.round(timerDuration / 60)} min</p>
           </div>
-        </div>
-      )}
+          <div className="mb-4 grid grid-cols-4 gap-2">
+            {[30, 60, 90, 120].map((sec) => (
+              <Button key={sec} variant={timerDuration === sec ? "default" : "outline"} onClick={() => { setTimerDuration(sec); setRemaining(sec); }}>
+                {sec}s
+              </Button>
+            ))}
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            {running ? (
+              <Button onClick={pauseTimer} variant="outline">Pausar</Button>
+            ) : (
+              <Button onClick={() => startTimer()} disabled={remaining === 0}>Iniciar</Button>
+            )}
+            <Button onClick={resetTimer} variant="ghost">Reiniciar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

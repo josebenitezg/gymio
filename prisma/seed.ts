@@ -1,10 +1,11 @@
-import { addDays, startOfWeek } from "date-fns";
 import fs from "node:fs";
 import path from "node:path";
 import { db } from "../lib/db";
 import { loadWeekFromCsv } from "../lib/parsers/csv-plan";
 
 async function main() {
+  const clerkUserId = process.env.SEED_CLERK_USER_ID ?? "demo-user";
+  const user = await db.user.upsert({ where: { clerkUserId }, create: { clerkUserId }, update: {} });
   const csvPath = path.join(process.cwd(), "rutina_planificada.csv");
   if (!fs.existsSync(csvPath)) {
     throw new Error(`CSV not found at ${csvPath}`);
@@ -16,8 +17,8 @@ async function main() {
   const weekDate = new Date(week.weekStartDate + "T00:00:00");
 
   const created = await db.week.upsert({
-    where: { weekStartDate: weekDate },
-    create: { weekStartDate: weekDate },
+    where: { userId_weekStartDate: { userId: user.id, weekStartDate: weekDate } },
+    create: { weekStartDate: weekDate, userId: user.id },
     update: {},
   });
 

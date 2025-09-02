@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
-import { CheckCircle2, ChevronLeft, ChevronRight, Circle, ImageIcon, PlayCircle, Timer } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Circle, ImageIcon, PlayCircle, Timer, ChevronDown, ChevronUp } from "lucide-react";
 import { format } from "date-fns";
 import Link from "next/link";
 
@@ -22,6 +22,7 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
 
   // Track completed sets per exercise id
   const [completedSets, setCompletedSets] = useState<Record<string, Set<number>>>({});
+  const [collapsedExercises, setCollapsedExercises] = useState<Record<string, boolean>>({});
 
   // Local editable reps/weight per set (not persisted yet)
   type SetKey = { reps: number; weightKg: number };
@@ -38,6 +39,7 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
     }
     setSetValues(initial);
     setCompletedSets({});
+    setCollapsedExercises({});
   }, [day]);
 
   function toggleSetCompleted(exerciseId: string, setNumber: number) {
@@ -66,6 +68,25 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
 
   function isExerciseComplete(exerciseId: string, totalSets: number): boolean {
     return (completedSets[exerciseId]?.size ?? 0) >= totalSets && totalSets > 0;
+  }
+
+  // Auto-colapse when exercise reaches 100% and no explicit user choice yet
+  useEffect(() => {
+    for (const ex of day.exercises) {
+      const complete = isExerciseComplete(ex.id, ex.sets.length);
+      if (complete && collapsedExercises[ex.id] === undefined) {
+        setCollapsedExercises((prev) => ({ ...prev, [ex.id]: true }));
+      }
+      if (!complete && collapsedExercises[ex.id]) {
+        // If user un-completes a set, expand back
+        setCollapsedExercises((prev) => ({ ...prev, [ex.id]: false }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedSets, day.exercises]);
+
+  function toggleExerciseCollapsed(exerciseId: string) {
+    setCollapsedExercises((prev) => ({ ...prev, [exerciseId]: !prev[exerciseId] }));
   }
 
   const title = useMemo(() => {
@@ -233,8 +254,26 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
                 })()}
               </div>
             </div>
+            {isExerciseComplete(ex.id, ex.sets.length) && (
+              <div className="ml-auto">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-expanded={!(collapsedExercises[ex.id] ?? false)}
+                  aria-controls={`exercise-${ex.id}-content`}
+                  onClick={() => toggleExerciseCollapsed(ex.id)}
+                >
+                  {(collapsedExercises[ex.id] ?? true) ? (
+                    <span className="inline-flex items-center gap-1 text-xs"><ChevronDown className="size-4" /> Ver</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs"><ChevronUp className="size-4" /> Ocultar</span>
+                  )}
+                </Button>
+              </div>
+            )}
           </CardHeader>
-          <CardContent>
+          {!(isExerciseComplete(ex.id, ex.sets.length) && (collapsedExercises[ex.id] ?? true)) && (
+          <CardContent id={`exercise-${ex.id}-content`}>
             <Table>
               <THead>
                 <TR>
@@ -348,6 +387,7 @@ export function DailyView({ days, initialIndex = 0 }: Props) {
               </TBody>
             </Table>
           </CardContent>
+          )}
         </Card>
       ))}
 

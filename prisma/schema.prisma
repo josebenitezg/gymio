@@ -1,0 +1,71 @@
+// Prisma schema for Gymio
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Week {
+  id             String  @id @default(uuid())
+  weekStartDate  DateTime @db.Date
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  days Day[]
+
+  @@unique([weekStartDate])
+}
+
+model Day {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  title     String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  weekId String
+
+  exercises Exercise[]
+
+  @@unique([weekId, date])
+}
+
+model Exercise {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String
+  imageUrl     String?
+  videoUrl     String?
+  breakSeconds Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  day   Day    @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  dayId String
+
+  sets  Set[]
+
+  @@unique([dayId, slug])
+}
+
+model Set {
+  id        String   @id @default(uuid())
+  setNumber Int
+  reps      Int
+  weightKg  Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  exerciseId String
+
+  @@unique([exerciseId, setNumber])
+}
+
+
